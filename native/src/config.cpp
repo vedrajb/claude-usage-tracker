@@ -96,3 +96,11 @@ void saveConfig(const std::filesystem::path& file, const Config& cfg)
     if (!out) throw std::runtime_error("Cannot write config file");
     out << j.dump(2, ' ', false, nlohmann::json::error_handler_t::replace);
 }
+
+bool ensureLightMode(Config& cfg, bool systemLight)
+{
+    if (!cfg.extra.is_object()) cfg.extra = nlohmann::json::object();
+    if (cfg.extra.contains("lightMode") && cfg.extra["lightMode"].is_boolean()) return false;
+    cfg.extra["lightMode"] = systemLight;
+    return true;
+}

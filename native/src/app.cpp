@@ -283,10 +283,21 @@ LRESULT App::handle(UINT m, WPARAM w, LPARAM l)
     return DefWindowProcW(hwnd_, m, w, l);
 }
 
+// True when the Windows taskbar/system uses the light theme.
+static bool systemLightTheme()
+{
+    DWORD v = 0, sz = sizeof(v);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                     L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &v, &sz) != ERROR_SUCCESS)
+        return false;
+    return v != 0;
+}
+
 void App::onCreate()
 {
     wmTaskbarCreated_ = RegisterWindowMessageW(L"TaskbarCreated");
     cfg_ = loadConfig(cfgFile_);
+    if (ensureLightMode(cfg_, systemLightTheme())) saveCfg();
     dock_ = std::make_unique<Dock>(hInst_, hwnd_);
     icon_ = makeTrayIcon();
     addTray();

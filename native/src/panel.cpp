@@ -50,16 +50,6 @@ Data* data(HWND h) { return reinterpret_cast<Data*>(GetWindowLongPtrW(h, GWLP_US
 
 COLORREF rgb(Rgb c) { return RGB(c.r, c.g, c.b); }
 
-// True when the Windows taskbar/system uses the light theme.
-bool systemLightTheme()
-{
-    DWORD v = 0, sz = sizeof(v);
-    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
-                     L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &v, &sz) != ERROR_SUCCESS)
-        return false;
-    return v != 0;
-}
-
 std::wstring widen(const std::string& s)
 {
     if (s.empty()) return {};
@@ -187,8 +177,7 @@ void paint(HWND h, Data& d, HDC target, bool present)
     SetBkMode(dc, TRANSPARENT);
     // Stale data is shown dimmed by blending toward the background colour.
     const double a = d.vs.stale ? STALE_ALPHA : 1.0;
-    // Light palette when configured or when Windows uses the light theme.
-    const bool light = d.vs.light || systemLightTheme();
+    const bool light = d.vs.light;
     const Rgb ref = light ? L_REF : BG, labelC = light ? L_LABEL : LABEL, textC = light ? L_LABEL : TEXT;
     // Fill with the palette's reference colour so antialiased text edges blend
     // toward it; this colour is keyed out (transparent) below.

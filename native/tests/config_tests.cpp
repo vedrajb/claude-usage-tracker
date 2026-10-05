@@ -108,3 +108,34 @@ TEST_CASE("saveConfig: unicode path and null x/y")
     CHECK_FALSE(r.x.has_value());
     CHECK_FALSE(r.y.has_value());
 }
+
+TEST_CASE("ensureLightMode: first startup stores the system theme")
+{
+    Config c;
+    CHECK(ensureLightMode(c, true));
+    CHECK(c.extra["lightMode"] == true);
+    Config d;
+    CHECK(ensureLightMode(d, false));
+    CHECK(d.extra["lightMode"] == false);
+}
+
+TEST_CASE("ensureLightMode: existing setting is kept")
+{
+    Config c;
+    c.extra["lightMode"] = false;
+    CHECK_FALSE(ensureLightMode(c, true));
+    CHECK(c.extra["lightMode"] == false);
+}
+
+TEST_CASE("ensureLightMode: invalid value is replaced and survives save/load")
+{
+    TempDir d;
+    auto file = d.path / "config.json";
+    Config c;
+    c.extra["lightMode"] = "yes";
+    CHECK(ensureLightMode(c, true));
+    saveConfig(file, c);
+    Config r = loadConfig(file);
+    CHECK(r.extra["lightMode"] == true);
+    CHECK_FALSE(ensureLightMode(r, false));
+}

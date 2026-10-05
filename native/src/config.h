@@ -22,5 +22,8 @@ struct Config {
 
 /// Loads and validates; a missing file is created with defaults, invalid values fall back to defaults.
 Config loadConfig(const std::filesystem::path& file);
+/// Sets `lightMode` in `extra` from the system theme if it is not stored yet
+/// (first startup). Returns true when it was added, i.e. the config needs saving.
+bool ensureLightMode(Config& cfg, bool systemLight);
 /// Writes known keys over a copy of `extra`; throws on I/O failure.
 void saveConfig(const std::filesystem::path& file, const Config& cfg);
