@@ -50,6 +50,16 @@ Data* data(HWND h) { return reinterpret_cast<Data*>(GetWindowLongPtrW(h, GWLP_US
 
 COLORREF rgb(Rgb c) { return RGB(c.r, c.g, c.b); }
 
+// True when the Windows taskbar/system uses the light theme.
+bool systemLightTheme()
+{
+    DWORD v = 0, sz = sizeof(v);
+    if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Themes\\Personalize",
+                     L"SystemUsesLightTheme", RRF_RT_REG_DWORD, nullptr, &v, &sz) != ERROR_SUCCESS)
+        return false;
+    return v != 0;
+}
+
 std::wstring widen(const std::string& s)
 {
     if (s.empty()) return {};
@@ -174,12 +184,15 @@ void paint(HWND h, Data& d, HDC target, bool present)
     }
     HGDIOBJ oldBmp = SelectObject(dc, bmp);
 
-    fillRect(dc, rc, BG);
     SetBkMode(dc, TRANSPARENT);
     // Stale data is shown dimmed by blending toward the background colour.
     const double a = d.vs.stale ? STALE_ALPHA : 1.0;
-    const bool light = d.vs.light;
-    const Rgb ref = light ? L_REF : BG, labelC = light ? L_LABEL : LABEL, textC = light ? L_TEXT : TEXT;
+    // Light palette when configured or when Windows uses the light theme.
+    const bool light = d.vs.light || systemLightTheme();
+    const Rgb ref = light ? L_REF : BG, labelC = light ? L_LABEL : LABEL, textC = light ? L_LABEL : TEXT;
+    // Fill with the palette's reference colour so antialiased text edges blend
+    // toward it; this colour is keyed out (transparent) below.
+    fillRect(dc, rc, ref);
     const Row& row = d.vs.credits;
 
     HGDIOBJ oldFont = SelectObject(dc, d.font);
@@ -203,7 +216,7 @@ void paint(HWND h, Data& d, HDC target, bool present)
     RECT l2{pad, h1, W - padR, H - scaleDip(2, s)};
     std::wstring bottom = widen(row.amountText);
     if (row.resetText != "--") bottom += (bottom.empty() ? L"" : L"  \u00B7  ") + widen(row.resetText);
-    drawText(dc, bottom, l2, DT_CENTER | DT_END_ELLIPSIS, blend(labelC, ref, a));
+    drawText(dc, bottom, l2, DT_CENTER | DT_END_ELLIPSIS, blend(textC, ref, a));
 
     if (!d.vs.badge.empty()) {
         SelectObject(dc, d.badgeFont);
@@ -247,18 +260,24 @@ void paint(HWND h, Data& d, HDC target, bool present)
     }
 
     SelectObject(dc, oldFont);
+    const uint32_t key = (static_cast<uint32_t>(ref.r) << 16) | (ref.g << 8) | ref.b;
     if (present) {
         // Per-pixel alpha: drawn pixels are opaque, the background is alpha 1 -
         // invisible, yet still hit-testable, so hover/right-click work over the
         // whole widget instead of only on the painted bar/text.
         auto* px = static_cast<uint32_t*>(bits);
-        const uint32_t key = (static_cast<uint32_t>(BG.r) << 16) | (BG.g << 8) | BG.b;
         for (int i = 0; i < W * H; ++i) px[i] = ((px[i] & 0x00FFFFFF) == key) ? 0x01000000u : (px[i] | 0xFF000000u);
         POINT src{0, 0};
         SIZE sz{W, H};
         BLENDFUNCTION bf{AC_SRC_OVER, 0, static_cast<BYTE>(std::lround(clampOpacity(d.opacity) * 255)), AC_SRC_ALPHA};
         UpdateLayeredWindow(h, nullptr, nullptr, &sz, dc, &src, 0, &bf, ULW_ALPHA);
     } else {
+        // Embedded in the taskbar the DIB is composited as premultiplied alpha:
+        // background pixels become fully transparent (0), drawn pixels opaque, so
+        // dark text shows correctly on a light taskbar too.
+        GdiFlush();
+        auto* px = static_cast<uint32_t*>(bits);
+        for (int i = 0; i < W * H; ++i) px[i] = ((px[i] & 0x00FFFFFF) == key) ? 0u : (px[i] | 0xFF000000u);
         BitBlt(target, 0, 0, W, H, dc, 0, 0, SRCCOPY);
     }
     SelectObject(dc, oldBmp);
@@ -310,6 +329,9 @@ LRESULT CALLBACK wndProc(HWND h, UINT m, WPARAM w, LPARAM l)
         return DefWindowProcW(h, m, w, l);
     case WM_ERASEBKGND:
         return 1;
+    case WM_SETTINGCHANGE:
+        InvalidateRect(h, nullptr, FALSE);
+        break;
     // Clicking must never activate us (focus would leave the user's app and the
     // taskbar would flash); handle the click but stay inactive.
     case WM_MOUSEACTIVATE:
