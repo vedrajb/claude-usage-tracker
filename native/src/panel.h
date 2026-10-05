@@ -13,7 +13,7 @@ constexpr UINT WM_CUT_MENU = WM_APP + 22;
 constexpr UINT WM_CUT_QUIT = WM_APP + 23;
 constexpr UINT WM_CUT_RELAYOUT = WM_APP + 24;
 
-constexpr int PANEL_WIDTH_DIP = 440;
+constexpr int PANEL_WIDTH_DIP = 170;
 constexpr int PANEL_HEIGHT_DIP = 36;
 
 namespace panel {
@@ -25,6 +25,10 @@ HWND create(HINSTANCE hInst, HWND controller, bool topmost, bool layered, double
             std::function<void(HWND)> onDestroyed = {});
 /// Updates what is displayed.
 void setState(HWND hwnd, const ViewState& vs);
+/// Pixel width needed for the current content (0 if the window has no state).
+int preferredWidth(HWND hwnd);
+/// Sets overall opacity (0-1) and repaints.
+void setOpacity(HWND hwnd, double opacity);
 /// Changes the scale factor (DPI) of an existing panel.
 void setDpi(HWND hwnd, int dpi);
 

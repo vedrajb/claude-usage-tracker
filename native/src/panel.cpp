@@ -13,7 +13,14 @@ namespace {
 
 constexpr wchar_t CLASS_NAME[] = L"CUT_Panel";
 
-constexpr Rgb BG{20, 22, 28};
+constexpr Rgb BG{20, 22, 28}; // also the layered colour key: pixels of this colour are transparent
+constexpr Rgb HOVER_BG{52, 56, 66};
+// Light-mode palette (dark text for light taskbars).
+constexpr Rgb L_LABEL{0x4a, 0x50, 0x5c};
+constexpr Rgb L_TEXT{0x14, 0x16, 0x1c};
+constexpr Rgb L_REF{0xf3, 0xf3, 0xf3};
+constexpr Rgb L_HOVER_BG{0xd6, 0xd9, 0xe0};
+constexpr Rgb L_TRACK{0x00, 0x00, 0x00};
 constexpr Rgb LABEL{0xaa, 0xb0, 0xbb};
 constexpr Rgb TEXT{0xe8, 0xea, 0xed};
 constexpr Rgb BADGE{0xf2, 0xa9, 0x3b};
@@ -32,6 +39,7 @@ struct Data {
     std::function<void(HWND)> onDestroyed;
     ViewState vs;
     int dpi = 96;
+    double opacity = 1.0;
     HFONT font = nullptr, badgeFont = nullptr;
     bool hover = false, hoverClose = false, tracking = false;
     bool pressClose = false, dragging = false, moved = false;
@@ -65,8 +73,8 @@ void rebuildFonts(Data& d)
         return CreateFontW(-scaleDip(px, d.dpi), 0, 0, 0, 600, FALSE, FALSE, FALSE, DEFAULT_CHARSET, OUT_DEFAULT_PRECIS,
                            CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI");
     };
-    d.font = make(13);
-    d.badgeFont = make(10);
+    d.font = make(12);
+    d.badgeFont = make(11);
 }
 
 // Rounded corners via a window region. On success the system takes ownership of
@@ -75,8 +83,7 @@ void applyRegion(HWND h, const Data& d)
 {
     RECT rc;
     GetClientRect(h, &rc);
-    int r = scaleDip(10, d.dpi) * 2;
-    HRGN rgn = CreateRoundRectRgn(0, 0, rc.right + 1, rc.bottom + 1, r, r);
+    HRGN rgn = CreateRectRgn(0, 0, rc.right, rc.bottom);
     if (rgn && !SetWindowRgn(h, rgn, TRUE)) DeleteObject(rgn);
 }
 
@@ -118,14 +125,14 @@ TRIVERTEX vertex(int x, int y, Rgb c)
 // so yellow sits at the midpoint of the bar rather than of the filled part.
 void drawBar(HDC dc, int x, int y, int w, int h, double fillPct, Rgb track, double alpha)
 {
-    HRGN trackRgn = CreateRoundRectRgn(x, y, x + w + 1, y + h + 1, h, h);
+    HRGN trackRgn = CreateRectRgn(x, y, x + w, y + h);
     HBRUSH tb = CreateSolidBrush(rgb(track));
     FillRgn(dc, trackRgn, tb);
     DeleteObject(tb);
 
     int fw = static_cast<int>(std::lround(w * fillPct / 100.0));
     if (fw > 0) {
-        HRGN fillRgn = CreateRoundRectRgn(x, y, x + fw + 1, y + h + 1, h, h);
+        HRGN fillRgn = CreateRectRgn(x, y, x + fw, y + h);
         CombineRgn(fillRgn, fillRgn, trackRgn, RGN_AND);
         SelectClipRgn(dc, fillRgn);
         Rgb g = blend(GREEN, BG, alpha), yl = blend(YELLOW, BG, alpha), r = blend(RED, BG, alpha);
@@ -144,7 +151,7 @@ void drawBar(HDC dc, int x, int y, int w, int h, double fillPct, Rgb track, doub
 // Draws everything into an off-screen DIB and blits once, so there is no flicker
 // (WM_ERASEBKGND is suppressed). Also used for WM_PRINTCLIENT. GDI objects
 // selected into the DC are restored before deletion.
-void paint(HWND h, Data& d, HDC target)
+void paint(HWND h, Data& d, HDC target, bool present)
 {
     RECT rc;
     GetClientRect(h, &rc);
@@ -171,48 +178,37 @@ void paint(HWND h, Data& d, HDC target)
     SetBkMode(dc, TRANSPARENT);
     // Stale data is shown dimmed by blending toward the background colour.
     const double a = d.vs.stale ? STALE_ALPHA : 1.0;
+    const bool light = d.vs.light;
+    const Rgb ref = light ? L_REF : BG, labelC = light ? L_LABEL : LABEL, textC = light ? L_TEXT : TEXT;
     const Row& row = d.vs.credits;
 
     HGDIOBJ oldFont = SelectObject(dc, d.font);
-    int pad = scaleDip(12, s), gap = scaleDip(8, s);
-    int x = pad;
-    RECT line{0, 0, 0, H};
+    int pad = scaleDip(8, s), gap = scaleDip(6, s);
+    int h1 = H / 2;
+    RECT line{0, 0, 0, h1};
 
-    line.left = x;
-    line.right = x + scaleDip(88, s);
-    drawText(dc, L"Claude Usage", line, DT_LEFT | DT_NOCLIP, blend(LABEL, BG, a));
-    x = line.right + gap;
+    // Line 1: bar + percentage.
+    int pctW = scaleDip(40, s);
+    int barH = scaleDip(11, s);
+    int padR = scaleDip(5, s);
+    int barW = W - pad - padR - gap - pctW;
+    drawBar(dc, pad, (h1 - barH) / 2 + scaleDip(2, s), barW, barH, row.fill, (d.vs.light ? blend(L_TRACK, L_REF, 0.16) : blend(WHITE, BG, 0.16)), a);
+    line.left = pad + barW + gap;
+    line.right = W - padR;
+    line.top = scaleDip(2, s);
+    drawText(dc, widen(row.pctText), line, DT_RIGHT, blend(textC, ref, a));
 
-    int barW = scaleDip(128, s), barH = scaleDip(10, s);
-    drawBar(dc, x, (H - barH) / 2, barW, barH, row.fill, blend(WHITE, BG, 0.16), a);
-    x += barW + gap;
-
-    line.left = x;
-    line.right = x + scaleDip(38, s);
-    drawText(dc, widen(row.pctText), line, DT_RIGHT, blend(TEXT, BG, a));
-    x = line.right + gap;
-
-    bool hasReset = row.resetText != "--";
-    int resetW = scaleDip(50, s);
-    int limit = W - pad - (hasReset ? resetW + gap : 0);
-    if (!row.amountText.empty() && x < limit) {
-        std::wstring amt = widen(row.amountText);
-        int w = std::min(textWidth(dc, amt), limit - x);
-        line.left = x;
-        line.right = x + w;
-        drawText(dc, amt, line, DT_LEFT | DT_END_ELLIPSIS, blend(LABEL, BG, a));
-        x += w + gap;
-    }
-    if (hasReset) {
-        line.left = x;
-        line.right = std::max(x + resetW, x + 1);
-        drawText(dc, widen(row.resetText), line, DT_LEFT, blend(LABEL, BG, a));
-    }
+    // Line 2: absolute amounts (+ reset time when present).
+    SelectObject(dc, d.badgeFont);
+    RECT l2{pad, h1, W - padR, H - scaleDip(2, s)};
+    std::wstring bottom = widen(row.amountText);
+    if (row.resetText != "--") bottom += (bottom.empty() ? L"" : L"  \u00B7  ") + widen(row.resetText);
+    drawText(dc, bottom, l2, DT_CENTER | DT_END_ELLIPSIS, blend(labelC, ref, a));
 
     if (!d.vs.badge.empty()) {
         SelectObject(dc, d.badgeFont);
-        RECT br{0, scaleDip(2, s), W - scaleDip(22, s), scaleDip(2, s) + scaleDip(14, s)};
-        drawText(dc, widen(d.vs.badge), br, DT_RIGHT, blend(BADGE, BG, a));
+        RECT br{pad, scaleDip(1, s), W - scaleDip(22, s), scaleDip(1, s) + scaleDip(10, s)};
+        drawText(dc, widen(d.vs.badge), br, DT_LEFT, blend(BADGE, ref, a));
     }
 
     if (d.hover) {
@@ -222,26 +218,49 @@ void paint(HWND h, Data& d, HDC target)
             HBRUSH b = CreateSolidBrush(rgb(blend(CLOSE_RED, BG, 0.8)));
             HGDIOBJ ob = SelectObject(dc, b);
             HGDIOBJ op = SelectObject(dc, GetStockObject(NULL_PEN));
-            Ellipse(dc, cr.left, cr.top, cr.right + 1, cr.bottom + 1);
+            Rectangle(dc, cr.left, cr.top, cr.right + 1, cr.bottom + 1);
             SelectObject(dc, op);
             SelectObject(dc, ob);
             DeleteObject(b);
         }
-        drawText(dc, L"\u00D7", cr, DT_CENTER, d.hoverClose ? TEXT : blend(TEXT, BG, 0.45));
+        drawText(dc, L"\u00D7", cr, DT_CENTER, d.vs.light ? (d.hoverClose ? WHITE : blend(L_TEXT, L_REF, 0.45)) : (d.hoverClose ? TEXT : blend(TEXT, BG, 0.45)));
+    }
+
+    if (d.hover && !d.vs.dragging) {
+        HPEN pen = CreatePen(PS_SOLID, 1, rgb(blend(light ? L_TEXT : TEXT, ref, 0.55)));
+        HGDIOBJ op = SelectObject(dc, pen);
+        HGDIOBJ ob = SelectObject(dc, GetStockObject(NULL_BRUSH));
+        RoundRect(dc, 0, 0, W, H, scaleDip(5, s), scaleDip(5, s));
+        SelectObject(dc, ob);
+        SelectObject(dc, op);
+        DeleteObject(pen);
     }
 
     if (d.vs.dragging) {
         HPEN pen = CreatePen(PS_DASH, 1, rgb(DRAG_OUTLINE));
         HGDIOBJ op = SelectObject(dc, pen);
         HGDIOBJ ob = SelectObject(dc, GetStockObject(NULL_BRUSH));
-        Rectangle(dc, 0, 0, W, H);
+        RoundRect(dc, 0, 0, W, H, scaleDip(5, s), scaleDip(5, s));
         SelectObject(dc, ob);
         SelectObject(dc, op);
         DeleteObject(pen);
     }
 
     SelectObject(dc, oldFont);
-    BitBlt(target, 0, 0, W, H, dc, 0, 0, SRCCOPY);
+    if (present) {
+        // Per-pixel alpha: drawn pixels are opaque, the background is alpha 1 -
+        // invisible, yet still hit-testable, so hover/right-click work over the
+        // whole widget instead of only on the painted bar/text.
+        auto* px = static_cast<uint32_t*>(bits);
+        const uint32_t key = (static_cast<uint32_t>(BG.r) << 16) | (BG.g << 8) | BG.b;
+        for (int i = 0; i < W * H; ++i) px[i] = ((px[i] & 0x00FFFFFF) == key) ? 0x01000000u : (px[i] | 0xFF000000u);
+        POINT src{0, 0};
+        SIZE sz{W, H};
+        BLENDFUNCTION bf{AC_SRC_OVER, 0, static_cast<BYTE>(std::lround(clampOpacity(d.opacity) * 255)), AC_SRC_ALPHA};
+        UpdateLayeredWindow(h, nullptr, nullptr, &sz, dc, &src, 0, &bf, ULW_ALPHA);
+    } else {
+        BitBlt(target, 0, 0, W, H, dc, 0, 0, SRCCOPY);
+    }
     SelectObject(dc, oldBmp);
     DeleteObject(bmp);
     DeleteDC(dc);
@@ -313,13 +332,13 @@ LRESULT CALLBACK wndProc(HWND h, UINT m, WPARAM w, LPARAM l)
     case WM_PAINT: {
         PAINTSTRUCT ps;
         HDC dc = BeginPaint(h, &ps);
-        if (d) paint(h, *d, dc);
+        if (d) paint(h, *d, dc, (GetWindowLongPtrW(h, GWL_EXSTYLE) & WS_EX_LAYERED) != 0);
         EndPaint(h, &ps);
         return 0;
     }
     // Lets DWM/PrintWindow capture the content (e.g. taskbar thumbnails/previews).
     case WM_PRINTCLIENT:
-        if (d) paint(h, *d, reinterpret_cast<HDC>(w));
+        if (d) paint(h, *d, reinterpret_cast<HDC>(w), false);
         return 0;
     case WM_SETCURSOR:
         if (d && d->vs.dragging && LOWORD(l) == HTCLIENT) {
@@ -432,8 +451,7 @@ HWND create(HINSTANCE hInst, HWND controller, bool topmost, bool layered, double
     HWND h = CreateWindowExW(ex, CLASS_NAME, L"Claude Usage Tracker", WS_POPUP, x, y, scaleDip(PANEL_WIDTH_DIP, dpi),
                              scaleDip(PANEL_HEIGHT_DIP, dpi), nullptr, nullptr, hInst, d);
     if (!h) return nullptr;
-    if (layered)
-        SetLayeredWindowAttributes(h, 0, static_cast<BYTE>(std::lround(clampOpacity(opacity) * 255)), LWA_ALPHA);
+    d->opacity = opacity;
     return h;
 }
 
@@ -443,6 +461,36 @@ void setState(HWND hwnd, const ViewState& vs)
     Data* d = data(hwnd);
     if (!d) return;
     d->vs = vs;
+    InvalidateRect(hwnd, nullptr, FALSE);
+}
+
+/// Width in pixels needed to show the current state compactly (never below a small minimum bar).
+int preferredWidth(HWND hwnd)
+{
+    Data* d = data(hwnd);
+    if (!d) return 0;
+    int s = d->dpi;
+    int pad = scaleDip(8, s), padR = scaleDip(5, s), gap = scaleDip(6, s);
+    HDC dc = GetDC(hwnd);
+    HGDIOBJ old = SelectObject(dc, d->font);
+    int pctW = std::max(textWidth(dc, widen(d->vs.credits.pctText)), textWidth(dc, L"100.0%"));
+    SelectObject(dc, d->badgeFont);
+    std::wstring bottom = widen(d->vs.credits.amountText);
+    if (d->vs.credits.resetText != "--") bottom += (bottom.empty() ? L"" : L"  \u00B7  ") + widen(d->vs.credits.resetText);
+    int bottomW = textWidth(dc, bottom);
+    SelectObject(dc, old);
+    ReleaseDC(hwnd, dc);
+    int line1 = pad + scaleDip(36, s) + gap + pctW + padR;
+    int line2 = pad + bottomW + padR + scaleDip(2, s);
+    return std::max(line1, line2);
+}
+
+/// Sets overall opacity (layered panels) and repaints.
+void setOpacity(HWND hwnd, double opacity)
+{
+    Data* d = data(hwnd);
+    if (!d) return;
+    d->opacity = opacity;
     InvalidateRect(hwnd, nullptr, FALSE);
 }
 

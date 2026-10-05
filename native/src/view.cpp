@@ -21,6 +21,14 @@ bool wellFormedCode(const std::string& c)
     return std::all_of(c.begin(), c.end(), [](char ch) { return (ch >= 'A' && ch <= 'Z') || (ch >= 'a' && ch <= 'z'); });
 }
 
+// True when the fetch error means the Claude CLI has no usable login.
+bool looksLoggedOut(const std::string& e)
+{
+    for (const char* k : {"No OAuth credentials", "OAuth token expired", "Invalid OAuth token", "HTTP 401", "HTTP 403"})
+        if (e.find(k) != std::string::npos) return true;
+    return false;
+}
+
 } // namespace
 
 std::string formatMoney(double value, const std::optional<std::string>& currency, int fractionDigits)
@@ -82,5 +90,9 @@ ViewState buildState(const std::optional<UsageData>& data, const std::string& er
     s.badge = error.empty() ? "" : (data ? "stale" : "error");
     s.error = error;
     s.dragging = dragging;
+    if (!data && looksLoggedOut(error)) {
+        s.credits.amountText = "Logged out - run claude /login";
+        s.badge.clear();
+    }
     return s;
 }

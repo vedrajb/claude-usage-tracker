@@ -19,6 +19,7 @@ struct ViewState {
     bool stale = false;
     std::string badge, error;
     bool dragging = false;
+    bool light = false; // light-mode palette (dark text)
 };
 
 /// Currency-formatted amount ("$1,234.50", "CODE 1,234.50"); mirrors Intl.NumberFormat output.

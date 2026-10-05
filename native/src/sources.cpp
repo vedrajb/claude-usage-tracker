@@ -532,6 +532,10 @@ UsageData fetchUsage(const fs::path& cwd, CancelToken* cancel)
         oauthErr = e.what();
     }
     if (cancel && cancel->cancelled()) throw std::runtime_error("Cancelled");
+    // No credentials at all means the CLI is logged out: report it right away
+    // instead of spawning a PTY that can only time out. (An expired token still
+    // falls through, since launching the CLI can refresh it.)
+    if (oauthErr.find("No OAuth credentials") != std::string::npos) throw std::runtime_error("oauth: " + oauthErr);
     try {
         UsageData d = fetchViaPty(cwd, cancel);
         d.source = "pty";

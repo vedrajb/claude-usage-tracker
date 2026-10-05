@@ -113,3 +113,12 @@ TEST_CASE("buildRow: percent shown with one decimal place")
     CHECK(buildRow(win(0), "used", NOW).pctText == "0.0%");
     CHECK(buildRow(win(130), "used", NOW).pctText == "100.0%");
 }
+
+TEST_CASE("buildState: logged-out error shows a login message instead of a bare error badge")
+{
+    ViewState s = buildState(std::nullopt, "oauth: No OAuth credentials found; pty: x", "used", false, 0);
+    CHECK(s.credits.amountText == "Logged out - run claude /login");
+    CHECK(s.badge.empty());
+    ViewState t = buildState(std::nullopt, "Timed out waiting for /usage output", "used", false, 0);
+    CHECK(t.badge == "error");
+}

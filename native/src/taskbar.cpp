@@ -197,7 +197,7 @@ void Dock::create(DockMode m, const Config& cfg, const TaskbarInfo& info)
                 // WS_EX_LAYERED must be applied after SetParent; layering set on the
                 // popup does not survive reparenting and the panel stays hidden.
                 SetWindowLongPtrW(hwnd_, GWL_EXSTYLE, GetWindowLongPtrW(hwnd_, GWL_EXSTYLE) | WS_EX_LAYERED);
-                SetLayeredWindowAttributes(hwnd_, 0, static_cast<BYTE>(std::lround(opacity * 255)), LWA_ALPHA);
+                panel::setOpacity(hwnd_, opacity);
             }
         }
         if (!hwnd_) {
@@ -295,6 +295,7 @@ void Dock::placeWith(const Config& cfg, const TaskbarInfo& info)
     int dpi = dpiFor(mode_, info, hwnd_);
     panel::setDpi(hwnd_, dpi);
     size_ = sizeFor(dpi);
+    if (int w = panel::preferredWidth(hwnd_)) size_.width = w;
     std::optional<Point> pos = mode_ == DockMode::Floating
                                    ? std::optional<Point>(floatingPosition(cfg, size_))
                                    : computeDockPosition(info.rect, info.tray, size_, cfg.offsetX);

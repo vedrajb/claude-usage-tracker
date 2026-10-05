@@ -42,6 +42,7 @@ enum MenuId : int {
     IDM_MOVE,
     IDM_UNDOCK,
     IDM_OPEN_CONFIG,
+    IDM_LIGHT,
     IDM_EXIT,
     IDM_DOCK_BASE = 10
 };
@@ -404,9 +405,11 @@ void App::pushState()
     if (!dock_) return;
     ViewState vs = buildState(data_, error_, cfg_.display, dragMode_, nowMs());
     // Until the first result arrives, show a placeholder in the amount column.
+    vs.light = cfg_.extra.value("lightMode", false);
     bool fetching = worker_.joinable() && done_ && !done_->load();
     if (fetching && !data_) vs.credits.amountText = "Fetching...";
     dock_->setView(vs);
+    dock_->place(cfg_); // width follows content
 }
 
 // SetTimer takes a UINT; clamp huge configured intervals instead of overflowing.
@@ -481,6 +484,7 @@ void App::showMenu(POINT pt)
     AppendMenuW(menu, MF_STRING | (dragMode_ ? MF_CHECKED : 0), IDM_MOVE, L"Move overlay (drag)");
     AppendMenuW(menu, MF_POPUP, reinterpret_cast<UINT_PTR>(sub), L"Dock mode");
     AppendMenuW(menu, MF_STRING | (cfg_.dock == "none" ? MF_GRAYED : 0), IDM_UNDOCK, L"Undock (float)");
+    AppendMenuW(menu, MF_STRING | (cfg_.extra.value("lightMode", false) ? MF_CHECKED : 0), IDM_LIGHT, L"Light mode");
     AppendMenuW(menu, MF_STRING, IDM_OPEN_CONFIG, L"Open config file");
     AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
     AppendMenuW(menu, MF_STRING, IDM_EXIT, L"Exit");
@@ -500,6 +504,11 @@ void App::showMenu(POINT pt)
     case IDM_TOGGLE: dock_->toggleVisible(); break;
     case IDM_MOVE:
         dragMode_ = !dragMode_;
+        pushState();
+        break;
+    case IDM_LIGHT:
+        cfg_.extra["lightMode"] = !cfg_.extra.value("lightMode", false);
+        saveCfg();
         pushState();
         break;
     case IDM_UNDOCK: setDock("none"); break;
