@@ -1,0 +1,15 @@
+ Settings:  Status   Config   Usage   Stats
+
+ Current session
+ ███████▌                                           15% used
+ Resets 4pm (Europe/London)
+
+ Current week (all models)
+ ██████████████████████████████████████████▌        85% used
+ Resets Oct 8, 2:30pm (Europe/London)
+
+ Current week (Sonnet only)
+ ████                                               8% used
+ Resets Oct 8, 2:30pm (Europe/London)
+
+ Esc to cancel

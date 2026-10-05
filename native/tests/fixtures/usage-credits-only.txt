@@ -1,0 +1,11 @@
+Settings
+Status   Config   Usage   Stats
+
+What's contributing to your limits usage?
+Approximate, based on local sessions on this machine — does not include other devices or claude.ai
+
+Usage credits
+▍  0% used
+$4.52 / $500.00 spent · Resets Nov 1 (Europe/London)
+
+d to day · w to week
